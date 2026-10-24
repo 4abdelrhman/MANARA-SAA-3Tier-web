@@ -1,0 +1,82 @@
+#!/bin/bash
+set -euo pipefail
+
+echo "Starting instance bootstrap"
+
+dnf install -y httpd
+
+install -d -m 0755 /var/www/html/static
+
+cat > /var/www/html/index.html <<'INDEX_HTML'
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Three-Tier Infrastructure</title>
+  <link rel="stylesheet" href="${cloudfront_base_url}/static/style.css">
+</head>
+<body>
+  <main>
+    <p class="eyebrow">AWS &middot; Multi-AZ &middot; Private compute</p>
+    <h1>Three-Tier Infrastructure</h1>
+    <p>
+      This placeholder is served by an Auto Scaling group behind an Application
+      Load Balancer. Replace this page with your application payload.
+    </p>
+    <ul>
+      <li>Web tier: public ALB, WAF, Route 53</li>
+      <li>Compute tier: private subnets, no inbound SSH, Session Manager access</li>
+      <li>Data tier: Multi-AZ RDS in private subnets</li>
+      <li>Static assets: CloudFront distribution</li>
+    </ul>
+  </main>
+</body>
+</html>
+INDEX_HTML
+
+cat > /var/www/html/static/style.css <<'STYLESHEET'
+:root { color-scheme: light dark; }
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  line-height: 1.6;
+}
+main {
+  max-width: 44rem;
+  margin: 0 auto;
+  padding: 4rem 1.5rem;
+}
+h1 {
+  font-size: clamp(2rem, 5vw, 3rem);
+  line-height: 1.15;
+  margin: 0 0 1rem;
+}
+.eyebrow {
+  margin: 0 0 0.5rem;
+  font-size: 0.75rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #6b7280;
+}
+ul { padding-left: 1.25rem; }
+li { margin-bottom: 0.35rem; }
+STYLESHEET
+
+printf 'OK\n' > /var/www/html/health
+
+chmod 0644 /var/www/html/index.html /var/www/html/health /var/www/html/static/style.css
+
+if command -v restorecon >/dev/null 2>&1; then
+  restorecon -RF /var/www/html
+fi
+
+httpd -t
+systemctl enable --now httpd
+
+if systemctl list-unit-files | grep -q '^amazon-ssm-agent.service'; then
+  systemctl enable --now amazon-ssm-agent
+fi
+
+echo "Instance bootstrap complete"
